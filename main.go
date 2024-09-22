@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // const url = "https://raw.githubusercontent.com/adeshgg/csv-data/refs/heads/main/sample.csv"
@@ -19,11 +20,13 @@ type RawData struct {
 	BMI    float64 `json:"bmi"`
 }
 
-const NUM_BATCHES = 2
+const NUM_BATCHES = 9
 
 func main() {
 
-	const url = "https://raw.githubusercontent.com/adeshgg/csv-data/refs/heads/main/sample.csv"
+	start := time.Now()
+
+	const url = "https://raw.githubusercontent.com/adeshgg/csv-data/refs/heads/main/sample-data.csv"
 	rawDataArr, err := fetchAndPopulateRawData(url)
 
 	if err != nil {
@@ -50,6 +53,10 @@ func main() {
 		fmt.Printf("Name: %s, Weight: %.2f, Height: %.2f, Batch: %d, BMI: %.2f\n",
 			data.Name, data.Weight, data.Height, data.Batch, data.BMI)
 	}
+
+	elapsed := time.Since(start)
+
+	fmt.Printf("Total Execution time %v\n", elapsed)
 
 }
 
@@ -130,6 +137,15 @@ func assignBatches(rawDataArr []RawData) ([]RawData, error) {
 	return rawDataArr, nil
 }
 
+func groupDataByBatch(rawDataArr []RawData) map[int][]*RawData {
+	batchMap := make(map[int][]*RawData)
+	for i := range rawDataArr {
+		batch := rawDataArr[i].Batch
+		batchMap[batch] = append(batchMap[batch], &rawDataArr[i])
+	}
+	return batchMap
+}
+
 func populateBmiValue(rawDataArr *RawData) {
 	heightInMeters := rawDataArr.Height / 100
 
@@ -141,18 +157,17 @@ func processBMIConcurrently(rawDataArr []RawData) error {
 
 	errChan := make(chan error, NUM_BATCHES)
 
+	batchMap := groupDataByBatch(rawDataArr)
+
 	for batch := 1; batch <= NUM_BATCHES; batch++ {
 		wg.Add(1)
 
-		go func(batchNum int) {
+		go func(batchNum int, batchData []*RawData) {
 			defer wg.Done()
-
-			for i := range rawDataArr {
-				if rawDataArr[i].Batch == batchNum {
-					populateBmiValue(&rawDataArr[i])
-				}
+			for _, data := range batchData {
+				populateBmiValue(data)
 			}
-		}(batch)
+		}(batch, batchMap[batch])
 	}
 
 	wg.Wait()
