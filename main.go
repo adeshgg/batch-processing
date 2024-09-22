@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 )
 
 // const url = "https://raw.githubusercontent.com/adeshgg/csv-data/refs/heads/main/sample.csv"
@@ -35,6 +36,19 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error while assigning batches: %v", err)
 		return
+	}
+
+	// Process BMI calculations concurrently
+	err = processBMIConcurrently(rawDataArr)
+	if err != nil {
+		fmt.Printf("Error while processing BMI concurrently: %v", err)
+		return
+	}
+
+	fmt.Println("Processed data:")
+	for _, data := range rawDataArr {
+		fmt.Printf("Name: %s, Weight: %.2f, Height: %.2f, Batch: %d, BMI: %.2f\n",
+			data.Name, data.Weight, data.Height, data.Batch, data.BMI)
 	}
 
 }
@@ -116,8 +130,40 @@ func assignBatches(rawDataArr []RawData) ([]RawData, error) {
 	return rawDataArr, nil
 }
 
-func populateBmiValue(rawDataArr RawData) {
+func populateBmiValue(rawDataArr *RawData) {
 	heightInMeters := rawDataArr.Height / 100
 
 	rawDataArr.BMI = rawDataArr.Weight / (heightInMeters * heightInMeters)
+}
+
+func processBMIConcurrently(rawDataArr []RawData) error {
+	var wg sync.WaitGroup
+
+	errChan := make(chan error, NUM_BATCHES)
+
+	for batch := 1; batch <= NUM_BATCHES; batch++ {
+		wg.Add(1)
+
+		go func(batchNum int) {
+			defer wg.Done()
+
+			for i := range rawDataArr {
+				if rawDataArr[i].Batch == batchNum {
+					populateBmiValue(&rawDataArr[i])
+				}
+			}
+		}(batch)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// Check for any errors
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
